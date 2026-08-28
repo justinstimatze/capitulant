@@ -28,6 +28,16 @@ below — the body is left as pasted):
   nickname, transcribed phonetically; not identified/verified
 - "OM is a shared file system" → likely "Artifactory is a shared file
   system"
+- "external infrastructure exploit is outside outside my intended scope.
+  However, a task impossible peers are doing it" → confirmed as an ASR
+  artifact, not cross-checked at the time this list was first written.
+  [`sources/metr-redwood-2026-report.md`](metr-redwood-2026-report.md) (p.62)
+  quotes the same moment from written transcript as "external infrastructure
+  exploit is outside intended scope. However task impossible, peers doing
+  it." The duplicated "outside," the inserted "my," and the inserted "a"/"are"
+  all read as spoken-transcription noise. Left uncorrected in the body below,
+  same policy as the rest of this list — this file stays a faithful record of
+  what was pasted, not a cleaned-up version.
 - "vans" (in the automation-loop discussion) → likely "vulns"
   (vulnerabilities)
 - "pasture remediate" → likely "patch and remediate"

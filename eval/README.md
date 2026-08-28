@@ -1,11 +1,14 @@
 # Eval seed set
 
-`seed_set.jsonl` — 29 known-ground-truth cases for scoring a classifier
+`seed_set.jsonl` — 32 known-ground-truth cases for scoring a classifier
 against `CODEBOOK.md`'s categories, built instead of hand-labeling the
 local transcript pool of narrated-pivot excerpts (see `LIT_REVIEW.md`'s
-"Evaluation" section). 3 real (the Black Hat transcript's two positives
-and one explicit negative), 26 constructed for this set — ground truth is
-known by construction, not by annotation.
+"Evaluation" section). 6 real (the Black Hat transcript's two positives and
+one explicit negative, plus three verbatim quotes from
+[`sources/metr-redwood-2026-report.md`](../sources/metr-redwood-2026-report.md)
+covering two categories that previously had no real specimen at all), 26
+constructed for this set — ground truth is known by construction, not by
+annotation.
 
 ## Running it
 
