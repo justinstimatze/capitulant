@@ -11,7 +11,7 @@ package filter
 import "regexp"
 
 var (
-	pivotA = regexp.MustCompile(`(?i)\b(instead|so i'll|so i will|rather than)\b`)
+	pivotA = regexp.MustCompile(`(?i)\b(instead|so i'll|so i will|rather than|however)\b`)
 	pivotB = regexp.MustCompile(`(?i)\b(isn't working|is not working|failed|impossible)\b`)
 )
 

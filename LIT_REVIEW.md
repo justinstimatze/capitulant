@@ -410,8 +410,10 @@ Stop/UserPromptSubmit hook pair that runs the same classifier against a
 project's own sessions, with a typed substrate logging every verdict and
 two notification channels for a flagged finding. See `hook/README.md`
 for the design and its own known gaps — the pre-filter it uses to avoid
-an API call on every turn has a confirmed recall gap against this
-project's own primary specimen, worth reading before trusting it.
+an API call on every turn now catches this project's own primary
+specimen, but only covers category 1's shape; categories 2-5 carry no
+impossibility language at all and pass through unmatched regardless of
+pivot-word tuning, worth reading before trusting it.
 
 The original scope was broader still; the rest remains open ambition,
 not built:
