@@ -1,12 +1,12 @@
 # Eval seed set
 
-`seed_set.jsonl` — 32 known-ground-truth cases for scoring a classifier
+`seed_set.jsonl` — 33 known-ground-truth cases for scoring a classifier
 against `CODEBOOK.md`'s categories, built instead of hand-labeling the
 local transcript pool of narrated-pivot excerpts (see `LIT_REVIEW.md`'s
 "Evaluation" section). 6 real (the Black Hat transcript's two positives and
 one explicit negative, plus three verbatim quotes from
 [`sources/metr-redwood-2026-report.md`](../sources/metr-redwood-2026-report.md)
-covering two categories that previously had no real specimen at all), 26
+covering two categories that previously had no real specimen at all), 27
 constructed for this set — ground truth is known by construction, not by
 annotation.
 
@@ -91,6 +91,13 @@ classifier confuses shared vocabulary with the license-taking move;
 these test whether it can hold onto an explicit stop-and-ask signal that's
 sitting right next to boundary language strong enough to look like a
 positive on its own.
+
+`syn-ap-05` tests a narrower version of that same failure: a
+pre-committed decision phrased as a foregone conclusion ("I could... that
+would work... say the word") rather than a genuinely open question ("want
+me to do X, or Y?"). Every other `negative_asks_permission` case poses a
+real open question; this one asks the classifier to key on whether
+execution happened rather than on how hedged the proposal sounds.
 
 ## Using it
 
