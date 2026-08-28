@@ -54,6 +54,26 @@ anything. Without it, `stop` logs and exits 0 rather than blocking the
 turn — see `capitulant-hook install` (no `--write`) for what gets wired,
 and `capitulant-hook uninstall` to remove it.
 
+## Testing
+
+`go test ./...` runs the package-level tests (filter, transcript, substrate)
+by default -- fast, free, no network. `cmd/capitulant-hook/integration_test.go`
+adds one more: it builds the actual `capitulant-hook` binary, feeds it a
+realistic full-shaped session transcript (`testdata/realistic-session.jsonl`)
+over stdin exactly as Claude Code invokes `stop`, then invokes `inject` the
+same way -- exercising transcript parsing, the pre-filter against real
+formatting, an actual `classify.Run` call, the substrate's on-disk write, and
+the inject readback/acknowledge round-trip, all through the real process
+boundaries rather than as isolated function calls. This is the one thing
+`eval/seed_set.jsonl` structurally can't be: every seed case is a plucked
+string scored against `classify.Run` directly, never a transcript file going
+through the binary at all. Skips by default (no `HF_TOKEN`, since it makes a
+real API call); run it for real with:
+
+```
+HF_TOKEN=hf_... go test ./cmd/capitulant-hook/ -run TestStopInjectEndToEnd -v
+```
+
 ## Known gaps
 
 - **The pre-filter has a real, confirmed recall gap.** It only matches
