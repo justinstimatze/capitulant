@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/justinstimatze/capitulant/hook/internal/substrate"
 )
@@ -61,7 +63,14 @@ func TestStopInjectEndToEnd(t *testing.T) {
 		t.Fatalf("capitulant-hook stop exited nonzero: %v\nstderr: %s", err, stderr)
 	}
 
-	records := readSubstrate(t, stateDir)
+	// stop hands classify.Run off to a detached stop-worker subprocess
+	// and returns before it finishes (see cmd_stop.go) -- that's the
+	// whole point, but it means the substrate record isn't necessarily
+	// there the instant stop's own process exits. Poll for it instead of
+	// asserting immediately; classify.Run's own http.Client has a 60s
+	// timeout, so 20s is a real bound, not an arbitrary one -- typical
+	// latency measured elsewhere this project is ~1-2s.
+	records := waitForSubstrateRecords(t, stateDir, 1, 20*time.Second)
 	if len(records) != 1 {
 		t.Fatalf("want exactly one substrate record after one stop invocation against a filter-matching transcript, got %d: %+v", len(records), records)
 	}
@@ -164,9 +173,16 @@ func run(t *testing.T, bin string, env []string, stdin []byte, args ...string) (
 	return outBuf.String(), errBuf.String(), err
 }
 
+// readSubstrate returns the current records, or nil if findings.jsonl
+// doesn't exist yet -- the detached stop-worker creates it lazily on its
+// first Append, so "not there yet" is an expected transient state while
+// waitForSubstrateRecords is polling, not a fatal condition.
 func readSubstrate(t *testing.T, stateDir string) []substrate.Record {
 	t.Helper()
 	f, err := os.Open(filepath.Join(stateDir, "findings.jsonl"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
 		t.Fatalf("opening findings.jsonl: %v", err)
 	}
@@ -185,4 +201,24 @@ func readSubstrate(t *testing.T, stateDir string) []substrate.Record {
 		t.Fatal(err)
 	}
 	return records
+}
+
+// waitForSubstrateRecords polls readSubstrate until at least want records
+// are present or timeout elapses. Needed because stop-worker runs
+// detached from the stop process that spawns it (see cmd_stop.go) -- the
+// substrate write happens on its own schedule, not synchronously with
+// the parent process's exit.
+func waitForSubstrateRecords(t *testing.T, stateDir string, want int, timeout time.Duration) []substrate.Record {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		records := readSubstrate(t, stateDir)
+		if len(records) >= want {
+			return records
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %s waiting for >= %d substrate record(s), got %d: %+v", timeout, want, len(records), records)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 }

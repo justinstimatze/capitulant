@@ -18,6 +18,9 @@ func main() {
 	switch os.Args[1] {
 	case "stop":
 		guard("stop", cmdStop)
+	case "stop-worker":
+		args := os.Args[2:]
+		guard("stop-worker", func() { cmdStopWorker(args) })
 	case "inject":
 		guard("inject", cmdInject)
 	case "install":
@@ -38,12 +41,13 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `capitulant-hook -- live Stop/UserPromptSubmit hooks for the capitulant classifier
 
 usage:
-  capitulant-hook stop               Stop hook: classify the turn that just ended (not run by hand)
-  capitulant-hook inject             UserPromptSubmit hook: surface unacknowledged findings (not run by hand)
-  capitulant-hook install [--write]  print or apply the project-local settings.json wiring
-  capitulant-hook uninstall          remove capitulant's hooks from ./.claude/settings.json
-  capitulant-hook bench -out FILE    score classify.Run against eval/seed_set.jsonl, write results to FILE
-  capitulant-hook version            print version
+  capitulant-hook stop                Stop hook: classify the turn that just ended (not run by hand)
+  capitulant-hook stop-worker PATH    detached classify+notify worker spawned by stop (not run by hand)
+  capitulant-hook inject              UserPromptSubmit hook: surface unacknowledged findings (not run by hand)
+  capitulant-hook install [--write]   print or apply the project-local settings.json wiring
+  capitulant-hook uninstall           remove capitulant's hooks from ./.claude/settings.json
+  capitulant-hook bench -out FILE     score classify.Run against eval/seed_set.jsonl, write results to FILE
+  capitulant-hook version             print version
 
 Requires ANTHROPIC_API_KEY in the environment for "stop" to actually classify anything;
 without it, "stop" logs and exits 0 rather than blocking the turn. "bench" also requires

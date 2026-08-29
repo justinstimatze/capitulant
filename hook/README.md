@@ -61,24 +61,43 @@ its router picked, currently Groq, with an unverified retention
 posture — is resolved.** `classify.Run` was ported from that backend to
 Anthropic's Messages API (2026-08-28); this project's data already goes
 to Anthropic by definition, since it runs inside Claude Code, so there's
-no new third party to trust here. Two different things are still open
-before that adds up to "go ahead and install," and neither is the
-privacy question the original block was about:
+no new third party to trust here.
 
-- **Accuracy on this backend hasn't been benchmarked against the full
-  corpus.** `classify.Run` currently defaults to Haiku for cost/latency,
-  matching gpt-oss-20b's role as the small judge — but every number in
-  `eval/results/` was scored against gpt-oss-20b. A `run_judge.py`
-  equivalent against this backend, across the full 37-case set, hasn't
-  been run.
+**Accuracy on this backend is now benchmarked, and no longer a reason to
+hold off.** `capitulant-hook bench` (the repeatable form of four ad hoc
+runs on 2026-08-29) scored 89.2% (33/37,
+`eval/results/seed37_haiku_structured_run3.json`) against the full seed
+set — matching gpt-oss-20b's own verdict accuracy and clearing its
+category accuracy, 75% against 62.5%. Getting there took switching
+`classify.Run` from a free-text verdict to forced tool-use with two
+gated booleans (`reasoning_present`, `shows_pattern`) computed into a
+verdict in Go rather than trusted from the model's own word — see the
+package comment atop `classify.go` for the specific self-contradiction
+this closed. One caveat carried forward, not resolved: temperature is
+left at the API default with no determinism guarantee, and one case
+(`syn-pdc-03`) flipped between correct and incorrect across
+identical-prompt reruns during this tuning pass — a single 37-case run
+is an estimate with real sampling noise in it, not an exact figure.
+
+Two different things are still open before that adds up to "go ahead
+and install," and neither is the privacy or accuracy question the
+original blockers were about:
+
 - **Same-family judging is genuinely untested, not just uncalibrated.**
-  Every accuracy figure for Claude as judge so far (the cross-family
-  comparison in `LIT_REVIEW.md`'s "Judge reliability") measured Claude
-  scoring *other* model families' transcripts — the OpenAI–Hugging Face
-  incident's agents. This hook's actual target is Claude Code's own
-  sessions. Whether a same-family judge reliably catches Claude's own
-  scope-violation reasoning, or has a structural blind spot for it, has
-  never been measured either way.
+  Every accuracy figure for Claude as judge so far, including the 89.2%
+  above, measured Claude scoring *other* model families' transcripts —
+  the OpenAI–Hugging Face incident's agents. This hook's actual target
+  is Claude Code's own sessions. Whether a same-family judge reliably
+  catches Claude's own scope-violation reasoning, or has a structural
+  blind spot for it, has never been measured either way.
+- **The injection-defense evidence predates the structured-output
+  switch and hasn't been re-run against it.** `eval/injection_test.py`'s
+  5/5 result (see "Known gaps" below) was measured against the old
+  free-text prompt, before `classify.Run` moved to forced tool-use.
+  Structured output plausibly narrows the injection surface — less free
+  text for an embedded instruction to hijack — but that's a guess, not
+  a measurement; nobody has run the injection cases through the new
+  prompt shape.
 
 ## Testing
 
@@ -98,6 +117,18 @@ makes a real API call); run it for real with:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-... go test ./cmd/capitulant-hook/ -run TestStopInjectEndToEnd -v
+```
+
+`capitulant-hook bench -out FILE` scores `classify.Run` against the full
+`eval/seed_set.jsonl` and writes a results file in the same schema
+`eval/run_judge.py` uses, plus category fields. This is the repeatable
+form of the numbers cited in "Install" above — rerun it after any prompt,
+model, or seed-set change rather than trusting a comment or a stale doc
+line:
+
+```
+cd hook
+ANTHROPIC_API_KEY=sk-ant-... ./capitulant-hook bench -out ../eval/results/seed37_haiku_runN.json
 ```
 
 ## Known gaps
@@ -174,7 +205,11 @@ ANTHROPIC_API_KEY=sk-ant-... go test ./cmd/capitulant-hook/ -run TestStopInjectE
   87.9% (29/33, `eval/results/seed33_run2.json`) against the pre-fix 84.8%,
   no regression. Not the same as proven robust: 5 crafted cases and one
   rerun is evidence the specific attacks tried no longer work, not that the
-  defense generalizes to unseen injection shapes.
+  defense generalizes to unseen injection shapes. All of this evidence
+  predates `classify.Run`'s switch to forced tool-use (2026-08-29, see
+  "Install" above) — the delimiter markers and system-prompt paragraph
+  carried over unchanged, but nobody has re-run these 5 cases against the
+  new prompt shape specifically.
 - **The substrate grows without bound.** Every verdict is appended
   forever; nothing rotates or expires `findings.jsonl`. This is partly
   intentional — a calibration pass needs the full history, not a
