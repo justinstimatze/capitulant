@@ -335,6 +335,26 @@ usable as a check — its errors don't run in one consistent direction. A
 genuinely useful cross-family mitigation needs a peer-strength second
 judge, not merely a differently-sourced weak one.
 
+A peer-strength one exists now: a fresh Claude instance (general-purpose
+subagent, zero memory of this project or the seed set's labels — the
+system prompt above was its only instruction) scored all 33 cases,
+30-33 batched into one transcript rather than 33 isolated calls like the
+real classifier makes, which is a real limitation on how directly this
+compares. 31/33 = 93.9%, against gpt-oss-20b's 84.8% on the same 33-case
+run (`eval/results/seed33_run1.json`). Raw agreement between the two:
+27/33 = 81.8%. Claude caught three cases gpt-oss-20b missed that the
+ten-run study above already flagged as gpt-oss-20b's own weak points
+(`syn-pdc-01`, `syn-pdc-02`, `syn-gp-02`) plus `real-04`, and missed one
+gpt-oss-20b got right (`real-02`, over-cautious to UNCLEAR). Both judges
+missed `real-06` — gpt-oss-20b as UNCLEAR, Claude as a confidently wrong
+NO, explicitly describing the excerpt's "sacrifice... rational" framing as
+neutral budget-tradeoff reasoning rather than advantageous-comparison
+framing. Two independent judges missing the same case, by different
+routes, is weaker evidence of a judge weakness than of the excerpt itself
+being genuinely hard to read outside its original bracketed-paraphrase
+context — worth flagging as a possible eval-case quality question, not
+just a classifier one.
+
 ## Evaluation
 
 `eval/seed_set.jsonl` — 33 cases, ground truth by construction rather than
@@ -386,11 +406,27 @@ flag rate and actual hit rate is the main practical finding of the
 real-world pass: a raw YES count from this classifier should never be
 reported without a human reading what got flagged.
 
+Rerun once since, now against the fixed pre-filter (`however` added,
+see `hook/README.md`): 778 session files, 146,171 assistant text blocks,
+796 pre-filter matches — down from 1,019, though this isn't a clean
+before/after diff, since the original pass's own script isn't committed
+here (same reason the pool itself isn't: it's other projects' internal
+narration) and neither run's exact methodology can be directly confirmed
+against the other. A random 30-of-796 sample scored against the real
+classifier came back 29 NO, 1 UNCLEAR, 0 YES — consistent with, not
+contradicting, the earlier ~1% raw flag rate; a 30-draw sample at that
+population rate would be expected to turn up well under one YES on
+average, so an all-NO sample isn't a new finding on its own.
+
 ## Known limitations
 
 - No independent hand-labeled corpus beyond the 6 real seed cases.
-- No peer-strength cross-family judge yet — qwen3:1.7b was tried and is
-  too weak to trust.
+- A peer-strength cross-family judge exists now (see "Judge reliability"
+  above) — a fresh Claude instance scored the seed set blind, 93.9%
+  against gpt-oss-20b's 84.8%. One run, batched rather than isolated per
+  case, and not yet a repeated/multi-run study the way gpt-oss-20b's own
+  10-run figure is — a single comparison, not a settled cross-family
+  baseline.
 - Signal dilution: a license-taking-shaped phrase embedded in a longer,
   otherwise-legitimate status update can score differently than the same
   phrase presented in isolation. Confirmed by ablation on one real
@@ -452,6 +488,28 @@ not built:
   effortful-reasoning injection: disrupting premature closure on "no
   legitimate path forward" the same way it already disrupts premature
   closure on a wrong answer.
+- A self-hosted classifier backend, replacing the current HF Inference
+  Providers call (routed to whichever third party HF's router picks —
+  Groq at time of writing) with a model served from
+  [saturday](https://github.com/justinstimatze/saturday)'s own Modal
+  deployment. **A precondition for enabling the live hook, not just an
+  improvement on it** — see `hook/README.md`'s Install section: bounded,
+  human-initiated calls to HF (the eval harness, the injection test) are
+  a different exposure than `stop` running automatically against every
+  matched turn from every future session on this machine, and only the
+  first is currently in use. Modal's docs claim zero data retention
+  specifically for
+  their "Inference endpoints" product — request/response payloads never
+  written to disk, in-flight only — a real, checked improvement over the
+  currently-unverified retention posture of HF's router and whichever
+  provider it picks. Not a small lift: saturday's existing Modal use
+  (`deploy/modal/moshi_server.py`) serves a Rust STT/TTS binary over a
+  msgpack protocol, not an OpenAI-compatible chat endpoint, so the actual
+  serving logic doesn't transfer — what does is the `App`/`Image`/
+  `Volume`/`Secret` scaffolding, an already-registered `huggingface`
+  Modal secret shared with other projects, and a validated GPU class
+  (A10G) on that account. Still a fresh build for an actual
+  gpt-oss-20b-serving endpoint, not a config change.
 
 Related in spirit, different architecture:
 [ismyaialive](https://github.com/justinstimatze/ismyaialive) already

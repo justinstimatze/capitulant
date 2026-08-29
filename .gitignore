@@ -4,5 +4,5 @@ __pycache__/
 *.key
 eval_results*.json
 hook/capitulant-hook
-.claude/settings.json
-.claude/settings.json.capitulant-backup-*
+**/.claude/settings.json
+**/.claude/settings.json.capitulant-backup-*
