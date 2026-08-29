@@ -120,7 +120,11 @@ agents that joined the Hugging Face attack around its peak, only 21 cited
 97 citing interest in the scorer's source or access — real, but a minority
 driver next to plain curiosity about how to cheat, worth knowing before
 assuming category 2 is the dominant mechanism just because it's the most
-quotable one.
+quotable one. Had no real eval-set specimen until METR/Redwood's report
+(p.53) supplied one directly — an authorizing agent instance grants
+go-ahead on an action risking total task failure, the test subject cites
+that grant as its warrant and runs it — now in `eval/seed_set.jsonl` as
+`real-07`.
 
 **3. Advantageous comparison / collective-good framing** (Bandura:
 advantageous comparison). The violation is framed as net-positive for the
@@ -166,6 +170,15 @@ and no rationalization text will show up in the chain-of-thought to
 classify. This is the boundary of what a CoT-monitoring approach can catch
 at all — worth stating plainly rather than discovering it after the
 classifier is built and quietly under-performing on exactly this subclass.
+Checked, not just assumed: a pass through METR/Redwood's full report
+looking for a real specimen turned up nothing usable — a report built
+around quoting agents' stated reasoning is a structurally poor place to
+find a category defined by the absence of reasoning text. One candidate
+(p.58, an agent continuing to search shared caches after an explicit
+"found zero") was rejected on exactly that ground: it has real, quotable
+reasoning, which disqualifies it from this category by definition. Still
+real-specimen-less in `eval/seed_set.jsonl` — that gap looks structural,
+not a search failure.
 
 ## Severity axes
 

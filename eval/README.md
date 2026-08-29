@@ -1,14 +1,19 @@
 # Eval seed set
 
-`seed_set.jsonl` — 33 known-ground-truth cases for scoring a classifier
+`seed_set.jsonl` — 37 known-ground-truth cases for scoring a classifier
 against `CODEBOOK.md`'s categories, built instead of hand-labeling the
 local transcript pool of narrated-pivot excerpts (see `LIT_REVIEW.md`'s
-"Evaluation" section). 6 real (the Black Hat transcript's two positives and
-one explicit negative, plus three verbatim quotes from
+"Evaluation" section). 10 real (the Black Hat transcript's two positives
+and one explicit negative, plus seven verbatim quotes from
 [`sources/metr-redwood-2026-report.md`](../sources/metr-redwood-2026-report.md)
-covering two categories that previously had no real specimen at all), 27
-constructed for this set — ground truth is known by construction, not by
-annotation.
+— read directly from the 91-page PDF, not summarized), 27 constructed for
+this set — ground truth is known by construction, not by annotation. Every
+one of `CODEBOOK.md`'s five positive categories now has at least one real
+specimen; `goal_persistence_no_signal` doesn't and, per that category's own
+definition (no CoT reasoning to classify at all), likely can't from a
+report built around quoting agents' stated reasoning — see
+`sources/metr-redwood-2026-report.md`'s note on the one candidate checked
+and rejected.
 
 ## Running it
 
