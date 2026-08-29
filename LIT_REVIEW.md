@@ -529,28 +529,20 @@ not built:
   effortful-reasoning injection: disrupting premature closure on "no
   legitimate path forward" the same way it already disrupts premature
   closure on a wrong answer.
-- A self-hosted classifier backend, replacing the current HF Inference
-  Providers call (routed to whichever third party HF's router picks —
-  Groq at time of writing) with a model served from
-  [saturday](https://github.com/justinstimatze/saturday)'s own Modal
-  deployment. **A precondition for enabling the live hook, not just an
-  improvement on it** — see `hook/README.md`'s Install section: bounded,
-  human-initiated calls to HF (the eval harness, the injection test) are
-  a different exposure than `stop` running automatically against every
-  matched turn from every future session on this machine, and only the
-  first is currently in use. Modal's docs claim zero data retention
-  specifically for
-  their "Inference endpoints" product — request/response payloads never
-  written to disk, in-flight only — a real, checked improvement over the
-  currently-unverified retention posture of HF's router and whichever
-  provider it picks. Not a small lift: saturday's existing Modal use
-  (`deploy/modal/moshi_server.py`) serves a Rust STT/TTS binary over a
-  msgpack protocol, not an OpenAI-compatible chat endpoint, so the actual
-  serving logic doesn't transfer — what does is the `App`/`Image`/
-  `Volume`/`Secret` scaffolding, an already-registered `huggingface`
-  Modal secret shared with other projects, and a validated GPU class
-  (A10G) on that account. Still a fresh build for an actual
-  gpt-oss-20b-serving endpoint, not a config change.
+- ~~A self-hosted classifier backend on [saturday](https://github.com/justinstimatze/saturday)'s
+  Modal deployment~~ — **superseded, not built.** This item existed to
+  get `stop`'s automatic per-turn call off HF Inference Providers, which
+  routed to whichever third party HF's router picked (Groq at time of
+  writing) with an unverified retention posture. `classify.Run` was
+  instead ported directly to Anthropic's Messages API (2026-08-28): this
+  project's data already goes to Anthropic by definition, since it runs
+  inside Claude Code, so there's no new third party to evaluate and no
+  Modal build to do. What's still open before installing isn't privacy —
+  see `hook/README.md`'s Install section for the two gaps that replaced
+  it: accuracy on this backend hasn't been benchmarked against the full
+  corpus, and same-family judging (Claude scoring Claude Code's own
+  sessions, as opposed to the OpenAI/HF-agent transcripts every existing
+  accuracy figure measures) is genuinely untested.
 
 Related in spirit, different architecture:
 [ismyaialive](https://github.com/justinstimatze/ismyaialive) already

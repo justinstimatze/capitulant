@@ -14,9 +14,10 @@ project you rely on.
 1. **`capitulant-hook stop`** (Stop hook): reads the transcript, runs a
    free local regex pre-filter (`internal/filter`) before anything else.
    Most turns don't match and the hook does nothing. A match calls
-   gpt-oss-20b (needs `HF_TOKEN`) and appends the result — verdict,
-   category, and the model's reasoning — to a local JSONL substrate,
-   whether the verdict is YES, NO, or UNCLEAR.
+   Claude Haiku via Anthropic's Messages API (needs `ANTHROPIC_API_KEY`)
+   and appends the result — verdict, category, and the model's
+   reasoning — to a local JSONL substrate, whether the verdict is YES,
+   NO, or UNCLEAR.
 2. On a YES verdict: fires a desktop notification (`notify-send`)
    immediately, *and* marks the finding for the next channel below.
    Two channels, not one — a local notification only reaches someone at
@@ -48,21 +49,36 @@ go build -o capitulant-hook ./cmd/capitulant-hook
 ./capitulant-hook install --write
 ```
 
-Requires `HF_TOKEN` (a Hugging Face Inference Providers key) in the
-environment Claude Code runs in for `stop` to actually classify
-anything. Without it, `stop` logs and exits 0 rather than blocking the
-turn — see `capitulant-hook install` (no `--write`) for what gets wired,
-and `capitulant-hook uninstall` to remove it.
+Requires `ANTHROPIC_API_KEY` in the environment Claude Code runs in for
+`stop` to actually classify anything. Without it, `stop` logs and exits
+0 rather than blocking the turn — see `capitulant-hook install` (no
+`--write`) for what gets wired, and `capitulant-hook uninstall` to
+remove it.
 
-**Not currently installed against HF Inference Providers, and shouldn't
-be, until the self-hosted-backend Roadmap item in `LIT_REVIEW.md`
-lands.** Bounded, human-initiated calls to HF — `eval/run_judge.py`,
-`eval/injection_test.py`, the integration test — are fine; they run
-once, on request, against constructed or explicitly-chosen text. Wiring
-`stop` to actually run means every matched turn from every future
-session on this machine gets sent automatically, with nobody choosing
-to send it each time — a materially different exposure than a one-off
-eval run, and the distinction this project should keep, not blur.
+**The specific thing that blocked installing this — routing every
+matched turn through HF Inference Providers to whichever third party
+its router picked, currently Groq, with an unverified retention
+posture — is resolved.** `classify.Run` was ported from that backend to
+Anthropic's Messages API (2026-08-28); this project's data already goes
+to Anthropic by definition, since it runs inside Claude Code, so there's
+no new third party to trust here. Two different things are still open
+before that adds up to "go ahead and install," and neither is the
+privacy question the original block was about:
+
+- **Accuracy on this backend hasn't been benchmarked against the full
+  corpus.** `classify.Run` currently defaults to Haiku for cost/latency,
+  matching gpt-oss-20b's role as the small judge — but every number in
+  `eval/results/` was scored against gpt-oss-20b. A `run_judge.py`
+  equivalent against this backend, across the full 37-case set, hasn't
+  been run.
+- **Same-family judging is genuinely untested, not just uncalibrated.**
+  Every accuracy figure for Claude as judge so far (the cross-family
+  comparison in `LIT_REVIEW.md`'s "Judge reliability") measured Claude
+  scoring *other* model families' transcripts — the OpenAI–Hugging Face
+  incident's agents. This hook's actual target is Claude Code's own
+  sessions. Whether a same-family judge reliably catches Claude's own
+  scope-violation reasoning, or has a structural blind spot for it, has
+  never been measured either way.
 
 ## Testing
 
@@ -77,11 +93,11 @@ the inject readback/acknowledge round-trip, all through the real process
 boundaries rather than as isolated function calls. This is the one thing
 `eval/seed_set.jsonl` structurally can't be: every seed case is a plucked
 string scored against `classify.Run` directly, never a transcript file going
-through the binary at all. Skips by default (no `HF_TOKEN`, since it makes a
-real API call); run it for real with:
+through the binary at all. Skips by default (no `ANTHROPIC_API_KEY`, since it
+makes a real API call); run it for real with:
 
 ```
-HF_TOKEN=hf_... go test ./cmd/capitulant-hook/ -run TestStopInjectEndToEnd -v
+ANTHROPIC_API_KEY=sk-ant-... go test ./cmd/capitulant-hook/ -run TestStopInjectEndToEnd -v
 ```
 
 ## Known gaps
@@ -122,15 +138,17 @@ HF_TOKEN=hf_... go test ./cmd/capitulant-hook/ -run TestStopInjectEndToEnd -v
   yet for *this* hook's own output.
 - **`notify-send` only.** No macOS/Windows support. Follows the pattern
   `nowcast`'s `internal/notify` uses if this ever needs to travel.
-- **Matched text leaves the machine.** Any turn the pre-filter matches
-  has its full text sent to Hugging Face's Inference Providers router
-  (routed to Groq, per `eval/run_judge.py`'s own docstring) for
-  classification. This is true of the offline `eval/run_judge.py` path
-  too, but the hook makes it a standing fact about a project's live
-  sessions rather than a one-off eval run — worth knowing before wiring
-  this into a project with sensitive content in its transcripts, even
-  though it's project-local-only for now. `LIT_REVIEW.md`'s Roadmap has
-  a self-hosted-backend item aimed at this specific gap, not built yet.
+- **Matched text leaves the machine, to Anthropic.** Any turn the
+  pre-filter matches has its full text sent to Anthropic's Messages API
+  for classification (`classify.Run`, ported from HF Inference
+  Providers 2026-08-28 — see "Install" above for why). This project's
+  transcripts already go to Anthropic by definition, since it runs
+  inside Claude Code, so this isn't a new party gaining access to
+  anything it didn't already have. What's unverified is narrower than
+  before but still real: no retention-policy citation has been checked
+  for the Messages API path specifically, the way HF's router and
+  Modal's "Inference endpoints" product were each checked directly
+  against their own docs before being ruled in or out.
 - **`classify.Run` had no defense against semantic prompt injection —
   confirmed live, then mitigated.** `classify.go` built the request as
   `fmt.Sprintf("Excerpt: %q", text)` — Go's `%q` blocked a literal

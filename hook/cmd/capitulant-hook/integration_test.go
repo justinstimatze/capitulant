@@ -22,22 +22,24 @@ import (
 // seed-set case is text, never a transcript file going through the binary
 // the way Claude Code actually invokes it (stdin JSON in, stdout/exit code
 // out, one process per hook event). This test is that missing path, run
-// once, start to finish, instead of scoring pieces of it in isolation.
+// once, start to finish, instead of scoring pieces of it in isolation. Uses
+// classify.Run's Anthropic Messages API backend, not eval/run_judge.py's
+// gpt-oss-20b path -- the two aren't wired to the same backend.
 //
-// Skips without HF_TOKEN set: this makes a real classify.Run network call
-// against Hugging Face's Inference Providers router, and should never run
+// Skips without ANTHROPIC_API_KEY set: this makes a real classify.Run
+// network call against Anthropic's Messages API, and should never run
 // silently as part of a default `go test ./...` and cost an API call
-// nobody asked for. Run explicitly with HF_TOKEN=hf_... go test ./cmd/...
-// -run TestStopInjectEndToEnd -v to actually exercise it.
+// nobody asked for. Run explicitly with ANTHROPIC_API_KEY=sk-ant-... go
+// test ./cmd/... -run TestStopInjectEndToEnd -v to actually exercise it.
 func TestStopInjectEndToEnd(t *testing.T) {
-	hfToken := os.Getenv("HF_TOKEN")
-	if hfToken == "" {
-		t.Skip("HF_TOKEN not set -- this test makes a real classify.Run API call, skipping rather than running it silently")
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		t.Skip("ANTHROPIC_API_KEY not set -- this test makes a real classify.Run API call, skipping rather than running it silently")
 	}
 
 	bin := buildHook(t)
 	stateDir := t.TempDir()
-	env := cleanEnv(hfToken, stateDir)
+	env := cleanEnv(apiKey, stateDir)
 
 	transcriptPath, err := filepath.Abs(filepath.Join("testdata", "realistic-session.jsonl"))
 	if err != nil {
@@ -136,18 +138,18 @@ func buildHook(t *testing.T) string {
 }
 
 // cleanEnv builds a subprocess environment from the current process's own,
-// with any pre-existing HF_TOKEN/CAPITULANT_STATE_DIR stripped before the
-// intended values are appended -- os/exec's handling of duplicate keys in
-// Env isn't something to rely on.
-func cleanEnv(hfToken, stateDir string) []string {
+// with any pre-existing ANTHROPIC_API_KEY/CAPITULANT_STATE_DIR stripped
+// before the intended values are appended -- os/exec's handling of
+// duplicate keys in Env isn't something to rely on.
+func cleanEnv(apiKey, stateDir string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "HF_TOKEN=") || strings.HasPrefix(kv, "CAPITULANT_STATE_DIR=") {
+		if strings.HasPrefix(kv, "ANTHROPIC_API_KEY=") || strings.HasPrefix(kv, "CAPITULANT_STATE_DIR=") {
 			continue
 		}
 		env = append(env, kv)
 	}
-	return append(env, "HF_TOKEN="+hfToken, "CAPITULANT_STATE_DIR="+stateDir)
+	return append(env, "ANTHROPIC_API_KEY="+apiKey, "CAPITULANT_STATE_DIR="+stateDir)
 }
 
 func run(t *testing.T, bin string, env []string, stdin []byte, args ...string) (stdout, stderr string, err error) {

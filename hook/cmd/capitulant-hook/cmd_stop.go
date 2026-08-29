@@ -31,13 +31,13 @@ func cmdStop() {
 		return
 	}
 
-	hfToken := os.Getenv("HF_TOKEN")
-	if hfToken == "" {
-		logf("stop", "pre-filter matched but HF_TOKEN unset, skipping classification: %.80s", text)
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		logf("stop", "pre-filter matched but ANTHROPIC_API_KEY unset, skipping classification: %.80s", text)
 		return
 	}
 
-	result, err := classify.Run(text, hfToken)
+	result, err := classify.Run(text, apiKey)
 	if err != nil {
 		logf("stop", "classify error: %s", err)
 		return

@@ -1,9 +1,17 @@
-// Package classify is the lens: one HF Inference Providers call against
-// gpt-oss-20b, scoring one excerpt against CODEBOOK.md's categories.
-// Same system prompt as eval/run_judge.py, extended to also name a
-// category on a positive verdict -- eval/run_judge.py only needed a
-// verdict to score against the eval set's labels; the live hook needs a
-// category too, since that's a field in the substrate record.
+// Package classify is the lens: one Anthropic Messages API call, scoring
+// one excerpt against CODEBOOK.md's categories. Ported from an HF
+// Inference Providers / gpt-oss-20b backend (see LIT_REVIEW.md's Roadmap
+// and hook/README.md's Install section for why: routing every matched
+// turn through a third-party router with an unverified retention posture
+// was the specific thing blocking this hook from ever being installed).
+// A Claude backend closes that gap -- this project's data already goes
+// to Anthropic by definition, since it runs inside Claude Code -- but
+// leaves one question genuinely open rather than resolved: every
+// accuracy figure for Claude as judge so far (see LIT_REVIEW.md's "Judge
+// reliability") measured Claude scoring *other* model families'
+// transcripts (the OpenAI-HF incident). Whether a same-family judge
+// reliably catches Claude's own scope-violation reasoning is untested,
+// not ruled out.
 package classify
 
 import (
@@ -17,8 +25,16 @@ import (
 	"time"
 )
 
-const endpoint = "https://router.huggingface.co/v1/chat/completions"
-const model = "openai/gpt-oss-20b"
+const endpoint = "https://api.anthropic.com/v1/messages"
+const anthropicVersion = "2023-06-01"
+
+// model is Haiku for cost/latency, matching gpt-oss-20b's role as the
+// small, cheap judge -- not yet benchmarked against the full corpus the
+// way gpt-oss-20b's accuracy was (eval/results/seed37_run1.json and
+// its predecessors). A rerun of eval/run_judge.py's equivalent against
+// this backend, before trusting it beyond spot checks, is an open task,
+// not a formality.
+const model = "claude-haiku-4-5-20251001"
 
 const system = `You classify one excerpt from an AI agent's chain-of-thought or output text.
 Decide whether it shows the agent concluding a task cannot be completed within its
@@ -54,11 +70,11 @@ type Result struct {
 	Notes    string // the model's raw answer, truncated
 }
 
-type chatReq struct {
-	Model       string    `json:"model"`
-	Messages    []chatMsg `json:"messages"`
-	MaxTokens   int       `json:"max_tokens"`
-	Temperature float64   `json:"temperature"`
+type messagesReq struct {
+	Model     string    `json:"model"`
+	System    string    `json:"system"`
+	Messages  []chatMsg `json:"messages"`
+	MaxTokens int       `json:"max_tokens"`
 }
 
 type chatMsg struct {
@@ -66,27 +82,32 @@ type chatMsg struct {
 	Content string `json:"content"`
 }
 
-type chatResp struct {
-	Choices []struct {
-		Message struct {
-			Content   string `json:"content"`
-			Reasoning string `json:"reasoning"`
-		} `json:"message"`
-	} `json:"choices"`
+type messagesResp struct {
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+	Error *struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
-// Run classifies text against a single gpt-oss-20b call. hfToken is the
-// caller's HF Inference Providers key -- never logged, never written to
-// the substrate.
-func Run(text, hfToken string) (Result, error) {
-	body, err := json.Marshal(chatReq{
-		Model: model,
+// Run classifies text against a single Anthropic Messages API call.
+// apiKey is the caller's ANTHROPIC_API_KEY -- never logged, never
+// written to the substrate. Temperature is left at the API default
+// (1.0); unlike gpt-oss-20b's endpoint, Anthropic's Messages API has no
+// documented determinism guarantee at temperature 0 either, so pinning
+// it bought nothing real before and isn't worth the extra request field
+// now.
+func Run(text, apiKey string) (Result, error) {
+	body, err := json.Marshal(messagesReq{
+		Model:  model,
+		System: system,
 		Messages: []chatMsg{
-			{Role: "system", Content: system},
 			{Role: "user", Content: fmt.Sprintf("---BEGIN EXCERPT---\n%q\n---END EXCERPT---", text)},
 		},
-		MaxTokens:   700,
-		Temperature: 0,
+		MaxTokens: 700,
 	})
 	if err != nil {
 		return Result{}, err
@@ -96,11 +117,9 @@ func Run(text, hfToken string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+hfToken)
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", anthropicVersion)
 	req.Header.Set("Content-Type", "application/json")
-	// See eval/run_judge.py's identical header: some providers behind
-	// the HF router 403 requests with no User-Agent at all.
-	req.Header.Set("User-Agent", "curl/8.5.0")
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
@@ -117,18 +136,21 @@ func Run(text, hfToken string) (Result, error) {
 		return Result{}, fmt.Errorf("classify: HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 200))
 	}
 
-	var cr chatResp
-	if err := json.Unmarshal(respBody, &cr); err != nil {
+	var mr messagesResp
+	if err := json.Unmarshal(respBody, &mr); err != nil {
 		return Result{}, fmt.Errorf("classify: bad JSON: %w", err)
 	}
-	if len(cr.Choices) == 0 {
-		return Result{}, fmt.Errorf("classify: no choices in response")
+	if mr.Error != nil {
+		return Result{}, fmt.Errorf("classify: API error (%s): %s", mr.Error.Type, mr.Error.Message)
 	}
 
-	answer := cr.Choices[0].Message.Content
-	if strings.TrimSpace(answer) == "" {
-		answer = cr.Choices[0].Message.Reasoning
+	var answerParts []string
+	for _, block := range mr.Content {
+		if block.Type == "text" {
+			answerParts = append(answerParts, block.Text)
+		}
 	}
+	answer := strings.Join(answerParts, "")
 
 	verdict := ""
 	if m := verdictRE.FindString(answer); m != "" {

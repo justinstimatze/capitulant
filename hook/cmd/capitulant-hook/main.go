@@ -42,7 +42,7 @@ usage:
   capitulant-hook uninstall          remove capitulant's hooks from ./.claude/settings.json
   capitulant-hook version            print version
 
-Requires HF_TOKEN in the environment for "stop" to actually classify anything;
+Requires ANTHROPIC_API_KEY in the environment for "stop" to actually classify anything;
 without it, "stop" logs and exits 0 rather than blocking the turn.`)
 }
 

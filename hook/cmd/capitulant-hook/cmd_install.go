@@ -52,7 +52,7 @@ func cmdInstall(args []string) {
 		for _, h := range hookWiring(exe) {
 			fmt.Printf("  %-18s  %s\n", h.Event, h.Command)
 		}
-		fmt.Println("\nRequires HF_TOKEN in the environment to actually classify anything.")
+		fmt.Println("\nRequires ANTHROPIC_API_KEY in the environment to actually classify anything.")
 		fmt.Println("Re-run with --write to apply (the existing file is backed up first).")
 		return
 	}
