@@ -49,11 +49,27 @@ go build -o capitulant-hook ./cmd/capitulant-hook
 ./capitulant-hook install --write
 ```
 
-Requires `ANTHROPIC_API_KEY` in the environment Claude Code runs in for
-`stop` to actually classify anything. Without it, `stop` logs and exits
-0 rather than blocking the turn — see `capitulant-hook install` (no
-`--write`) for what gets wired, and `capitulant-hook uninstall` to
-remove it.
+Requires `ANTHROPIC_API_KEY` for `stop` to actually classify anything.
+`install` resolves it once, at install time — from the current
+environment first, falling back to reading `ANTHROPIC_API_KEY=` out of
+`../.env` — and bakes the found value directly into the stop hook's own
+command string in `settings.json`, rather than relying on the shell
+that later launches Claude Code to have it set (2026-08-29: nothing on
+this host auto-sources `capitulant/.env`, so that reliance meant an
+installed hook could run fully inert without anyone noticing).
+`settings.json` is already gitignored, so this doesn't add a new leak
+surface, but it does mean the plaintext key sits in a second file, and
+that anything that reads or diffs that file (a git-unaware backup tool,
+a terminal-session logger, a coding agent's own transcript log) can
+surface it in plaintext same as `.env` already can. A re-run of
+`install --write` after rotating the key replaces the old one in place
+rather than adding a second Stop hook alongside it — verified by
+`TestAddHookReplacesRotatedKey` in `cmd_install_test.go`, since two
+live entries would mean `classify.Run` firing twice per matched turn.
+If no key is found anywhere, `stop` logs and exits 0 rather than
+blocking the turn — see `capitulant-hook install` (no `--write`) for
+what gets wired, and `capitulant-hook uninstall` to remove it (which
+correctly strips the key-bearing command too, not just a plain one).
 
 **The specific thing that blocked installing this — routing every
 matched turn through HF Inference Providers to whichever third party

@@ -16,11 +16,65 @@ import (
 // classifier that fires notify-send on every session -- wiring it into
 // every project globally before any live calibration exists would be a
 // much bigger blast radius than this prototype has earned.
-func hookWiring(exe string) []struct{ Event, Command string } {
+//
+// If apiKey is non-empty, it's baked directly into the Stop hook's own
+// command string as a leading ANTHROPIC_API_KEY=... shell assignment --
+// chosen over relying on the launching shell's environment (2026-08-29):
+// nothing on this host auto-sources capitulant/.env, so an installed
+// hook that only reads os.Getenv would silently log-and-skip forever
+// unless the user remembered to source .env before every `claude`
+// launch in this project. settings.json is already gitignored, so this
+// isn't a new leak surface -- it moves the plaintext key from one
+// gitignored file to another.
+func hookWiring(exe, apiKey string) []struct{ Event, Command string } {
+	stopCmd := exe + " stop"
+	if apiKey != "" {
+		stopCmd = fmt.Sprintf("ANTHROPIC_API_KEY=%s %s stop", shellSingleQuote(apiKey), exe)
+	}
 	return []struct{ Event, Command string }{
-		{"Stop", exe + " stop"},
+		{"Stop", stopCmd},
 		{"UserPromptSubmit", exe + " inject"},
 	}
+}
+
+// shellSingleQuote wraps s in single quotes for safe use in a shell
+// command string, escaping any embedded single quote. Anthropic API keys
+// don't contain shell metacharacters in practice, but the hook command
+// this builds is written to a file and executed by a shell either way --
+// quoting defensively costs nothing and isn't worth trusting on format
+// alone.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// resolveAPIKeyForInstall finds the key to bake into the stop hook's
+// command (see hookWiring). Checks the current environment first (already
+// sourced, or manually exported), then falls back to reading ../.env
+// directly -- capitulant/.env from cwd=hook/, the layout install's own
+// documented steps assume ("cd hook" first). Returns "" with a non-nil
+// err, not a fatal error, on failure -- callers decide whether a missing
+// key should block install (it shouldn't; a key can be added later and
+// the environment-variable path still works as a fallback).
+func resolveAPIKeyForInstall() (string, error) {
+	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
+		return v, nil
+	}
+	data, err := os.ReadFile("../.env")
+	if err != nil {
+		return "", fmt.Errorf("not in environment and could not read ../.env: %w", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		v, ok := strings.CutPrefix(line, "ANTHROPIC_API_KEY=")
+		if !ok {
+			continue
+		}
+		v = strings.Trim(v, `"'`)
+		if v != "" {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("not in environment and no ANTHROPIC_API_KEY= line in ../.env")
 }
 
 func cmdInstall(args []string) {
@@ -46,18 +100,29 @@ func cmdInstall(args []string) {
 		os.Exit(1)
 	}
 
+	apiKey, keyErr := resolveAPIKeyForInstall()
+
 	if !*write {
+		displayKey := ""
+		if apiKey != "" {
+			displayKey = "<redacted, resolved from ../.env>"
+		}
 		fmt.Printf("target: %s (project-local; this tool has no global install option)\n\n", path)
 		fmt.Println("capitulant-hook install --write would merge these hooks:")
-		for _, h := range hookWiring(exe) {
+		for _, h := range hookWiring(exe, displayKey) {
 			fmt.Printf("  %-18s  %s\n", h.Event, h.Command)
 		}
-		fmt.Println("\nRequires ANTHROPIC_API_KEY in the environment to actually classify anything.")
+		if apiKey != "" {
+			fmt.Println("\nANTHROPIC_API_KEY resolved and will be baked into the stop hook's own command")
+			fmt.Println("string on --write, so it works regardless of the launching shell's environment.")
+		} else {
+			fmt.Printf("\nANTHROPIC_API_KEY not resolved (%s) -- the stop\nhook's command will run without it baked in, and stop will log-and-skip until\nthe environment provides it.\n", keyErr)
+		}
 		fmt.Println("Re-run with --write to apply (the existing file is backed up first).")
 		return
 	}
 
-	changed, backup, err := mergeSettings(path, exe)
+	changed, backup, err := mergeSettings(path, exe, apiKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "capitulant-hook install: %s\n", err)
 		os.Exit(1)
@@ -69,6 +134,9 @@ func cmdInstall(args []string) {
 		fmt.Printf("%s: already wired, nothing to do\n", path)
 	} else {
 		fmt.Printf("%s: %d hook(s) added\n", path, changed)
+	}
+	if apiKey == "" {
+		fmt.Printf("\nWarning: ANTHROPIC_API_KEY not resolved (%s) -- stop will\nlog-and-skip until it's set in the environment Claude Code runs in.\n", keyErr)
 	}
 	fmt.Println("\nHooks load at session start -- restart Claude Code in this project to pick them up.")
 }
@@ -105,7 +173,7 @@ func settingsPath() (string, error) {
 	return filepath.Join(cwd, ".claude", "settings.json"), nil
 }
 
-func mergeSettings(path, exe string) (added int, backup string, err error) {
+func mergeSettings(path, exe, apiKey string) (added int, backup string, err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return 0, "", err
 	}
@@ -139,7 +207,7 @@ func mergeSettings(path, exe string) (added int, backup string, err error) {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-	for _, h := range hookWiring(exe) {
+	for _, h := range hookWiring(exe, apiKey) {
 		if addHook(hooks, h.Event, h.Command) {
 			added++
 		}
@@ -153,7 +221,17 @@ func mergeSettings(path, exe string) (added int, backup string, err error) {
 	return added, backup, os.WriteFile(path, append(out, '\n'), mode)
 }
 
+// addHook wires one event -> command. If an existing capitulant entry
+// for the same subcommand (stop/inject) is already present, its command
+// string is replaced in place rather than appended alongside -- without
+// this, a rotated ANTHROPIC_API_KEY baked into the stop command (see
+// hookWiring) would leave the OLD key's hook still firing after a
+// reinstall, since the two command strings differ byte-for-byte and a
+// plain equality check would treat them as unrelated. Returns whether
+// anything changed (added or replaced).
 func addHook(hooks map[string]any, event, cmd string) bool {
+	newSub, _ := capitulantSubcommand(cmd)
+
 	existing, _ := hooks[event].([]any)
 	for _, entry := range existing {
 		em, ok := entry.(map[string]any)
@@ -166,8 +244,13 @@ func addHook(hooks map[string]any, event, cmd string) bool {
 			if !ok {
 				continue
 			}
-			if c, _ := hm["command"].(string); c == cmd {
+			c, _ := hm["command"].(string)
+			if c == cmd {
 				return false
+			}
+			if sub, ok := capitulantSubcommand(c); ok && newSub != "" && sub == newSub {
+				hm["command"] = cmd
+				return true
 			}
 		}
 	}
@@ -256,17 +339,51 @@ func unmergeSettings(path string) (removed int, backup string, err error) {
 	return removed, backup, os.WriteFile(path, append(out, '\n'), mode)
 }
 
-func isCapitulantCmd(cmd string) bool {
+// capitulantSubcommand returns the capitulant-hook subcommand a hook
+// command string invokes ("stop", "inject", ...), skipping any leading
+// KEY=VALUE shell assignments -- the stop hook's own command can carry
+// a leading ANTHROPIC_API_KEY=... (see hookWiring). ok is false if cmd
+// doesn't invoke this project's own binary at all.
+func capitulantSubcommand(cmd string) (subcmd string, ok bool) {
 	fields := strings.Fields(cmd)
-	if len(fields) < 2 {
+	i := 0
+	for i < len(fields) && isShellAssignment(fields[i]) {
+		i++
+	}
+	if len(fields) < i+2 || filepath.Base(fields[i]) != "capitulant-hook" {
+		return "", false
+	}
+	return fields[i+1], true
+}
+
+// isShellAssignment reports whether field has the shape NAME=... with a
+// valid shell identifier for NAME (letters, digits, underscore; not
+// starting with a digit) -- the shape hookWiring's ANTHROPIC_API_KEY=...
+// prefix takes, and the shape any similar future prefix would too.
+func isShellAssignment(field string) bool {
+	eq := strings.IndexByte(field, '=')
+	if eq <= 0 {
 		return false
 	}
-	if filepath.Base(fields[0]) != "capitulant-hook" {
-		return false
+	for i := 0; i < eq; i++ {
+		c := field[i]
+		switch {
+		case c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'):
+		case c >= '0' && c <= '9' && i > 0:
+		default:
+			return false
+		}
 	}
-	switch fields[1] {
-	case "stop", "inject":
+	return true
+}
+
+func isCapitulantCmd(cmd string) bool {
+	switch sub, ok := capitulantSubcommand(cmd); {
+	case !ok:
+		return false
+	case sub == "stop" || sub == "inject":
 		return true
+	default:
+		return false
 	}
-	return false
 }
