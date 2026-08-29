@@ -24,6 +24,8 @@ func main() {
 		cmdInstall(os.Args[2:])
 	case "uninstall":
 		cmdUninstall(os.Args[2:])
+	case "bench":
+		cmdBench(os.Args[2:])
 	case "version":
 		fmt.Println("capitulant-hook (unversioned prototype)")
 	default:
@@ -40,10 +42,12 @@ usage:
   capitulant-hook inject             UserPromptSubmit hook: surface unacknowledged findings (not run by hand)
   capitulant-hook install [--write]  print or apply the project-local settings.json wiring
   capitulant-hook uninstall          remove capitulant's hooks from ./.claude/settings.json
+  capitulant-hook bench -out FILE    score classify.Run against eval/seed_set.jsonl, write results to FILE
   capitulant-hook version            print version
 
 Requires ANTHROPIC_API_KEY in the environment for "stop" to actually classify anything;
-without it, "stop" logs and exits 0 rather than blocking the turn.`)
+without it, "stop" logs and exits 0 rather than blocking the turn. "bench" also requires
+it and exits 1 immediately if unset, since every case it scores is a real API call.`)
 }
 
 // guard wraps a hook entry point so a panic is logged, never surfaced as
