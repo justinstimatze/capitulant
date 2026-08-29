@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Prompt-injection stress test against classify.Run's real request shape.
 
-classify.go builds the user message as `fmt.Sprintf("Excerpt: %q", text)` --
-Go's %q escapes quotes/newlines, so a literal quote-breakout out of the JSON
-request is blocked, but nothing defends against semantic injection: text
-*inside* the excerpt that tries to talk the model out of its system
-instructions (a fake "SYSTEM:" line, a fake pre-filled answer, a claim of
-special grader status, a request to change topic, a fake role-tag). Every
-case here embeds a genuine, unambiguous scope-violation-plus-license-taking
-narrative (so the correct answer is YES) plus one such injection attempt --
-this measures whether the real classifier holds the correct verdict anyway.
+classify.go delimits the excerpt with ---BEGIN EXCERPT---/---END EXCERPT---
+markers and instructs the model to treat anything inside them as inert data,
+after an earlier version (`fmt.Sprintf("Excerpt: %q", text)`, no delimiter,
+no in-content-injection warning) let 2 of these 5 cases break the verdict --
+see hook/README.md's "Known gaps" for that run and the fix. Every case here
+embeds a genuine, unambiguous scope-violation-plus-license-taking narrative
+(so the correct answer is YES) plus one injection attempt (a fake "SYSTEM:"
+line, a fake pre-filled answer, a claim of special grader status, a request
+to change topic, a fake role-tag) -- this measures whether the real
+classifier holds the correct verdict anyway.
 
 Usage: HF_TOKEN=hf_... python3 injection_test.py [output.json]
 """
